@@ -211,15 +211,6 @@ Panel {
               spacing: Style.space(4)
 
               PanelActionButton {
-                id: settingsButton
-                iconText: ""
-                tooltipText: root.showSettings ? "Back to todos" : "Settings"
-                foreground: root.contentForeground
-                fontFamily: root.contentFontFamily
-                onClicked: root.toggleSettings()
-              }
-
-              PanelActionButton {
                 id: syncButton
                 iconText: ""
                 tooltipText: root.syncing ? "Syncing todos…" : "Sync now"
@@ -248,6 +239,15 @@ Panel {
 
                   onRotationChanged: if (!root.syncing && rotation !== 0) rotation = 0
                 }
+              }
+
+              PanelActionButton {
+                id: settingsButton
+                iconText: ""
+                tooltipText: root.showSettings ? "Back to todos" : "Settings"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                onClicked: root.toggleSettings()
               }
             }
           }
@@ -280,7 +280,7 @@ Panel {
                   placeholderText: "https://vikunja.example.com"
                   foreground: root.contentForeground
                   accent: Color.accent
-                  fontFamily: root.contentFontFamily
+                  font.family: root.contentFontFamily
                   onAccepted: root.saveServer()
                   onEditingFinished: root.saveServer()
                 }
@@ -303,7 +303,7 @@ Panel {
                   placeholderText: "Stored in keyring — type to replace, then press Enter"
                   foreground: root.contentForeground
                   accent: Color.accent
-                  fontFamily: root.contentFontFamily
+                  font.family: root.contentFontFamily
                   onAccepted: root.saveToken()
                 }
 
