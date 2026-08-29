@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "id": "org.jasongerber.vikunja",
+  "name": "Vikunja Todos",
+  "version": "1.0.0",
+  "author": "jsongerber",
+  "license": "MIT",
+  "description": "Quick access to your Vikunja todos.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Vikunja Todos",
+    "description": "Shows your next todo in the bar and your open todos on click",
+    "category": "Productivity",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "instance": "",
+      "showDone": false,
+      "showNoDate": true,
+      "syncInterval": 300
+    },
+    "schema": [
+      {
+        "key": "instance",
+        "type": "string",
+        "label": "Instance URL",
+        "defaultValue": "",
+        "description": "Base URL of your Vikunja instance, e.g. https://vikunja.example.com"
+      },
+      {
+        "key": "showDone",
+        "type": "boolean",
+        "label": "Show completed todos",
+        "defaultValue": false,
+        "description": "Also show tasks that are already done, dimmed."
+      },
+      {
+        "key": "showNoDate",
+        "type": "boolean",
+        "label": "Show todos without a due date",
+        "defaultValue": true,
+        "description": "Include tasks that have no due date."
+      },
+      {
+        "key": "syncInterval",
+        "type": "integer",
+        "label": "Sync interval (seconds)",
+        "min": 30,
+        "max": 86400,
+        "step": 15,
+        "defaultValue": 300,
+        "description": "How often the todo list refreshes automatically."
+      }
+    ]
+  }
+}

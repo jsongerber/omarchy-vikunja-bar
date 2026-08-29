@@ -11,12 +11,13 @@ urgent todo in the bar and the full list, grouped by due date, on click.
 - Prioritised tasks show a colored priority marker (1–4).
 - API token is read from the OS keyring and passed to `curl` via the
   environment — it never appears in `ps` or on disk.
-- Syncs automatically every five minutes (or press <kbd>s</kbd> / click the
-  sync button).
+- Syncs automatically on a configurable interval (default 300 seconds).
+- A **settings page** (gear icon in the panel) configures the server URL,
+  API token, sync interval, and visibility of done / no-due-date todos.
 
 ## Setup
 
-1. Add the widget to `~/.config/omarchy/shell.json` and set your instance:
+1. Add the widget to `~/.config/omarchy/shell.json`:
 
    ```json
    {
@@ -25,8 +26,15 @@ urgent todo in the bar and the full list, grouped by due date, on click.
    }
    ```
 
+   You can set `instance` here, or leave it empty and configure everything from
+   the panel's settings page.
+
 2. Create an API token in Vikunja (Settings → API Tokens) and store it in your
-   keyring:
+   keyring. Easiest from the panel: open the settings page (gear icon), paste
+   the token into the **API TOKEN** field, and press Enter. The settings page
+   also links straight to `{instance}/user/settings/api-tokens`.
+
+   Alternatively, store it on the command line:
 
    ```sh
    secret-tool store --label='Vikunja API token' service org.jasongerber.vikunja
@@ -41,11 +49,19 @@ Requires `curl`, `jq`, and `secret-tool` (libsecret).
 
 ## Settings
 
+All settings live in the widget's entry in `~/.config/omarchy/shell.json` and
+can be edited there or from the panel's settings page (the gear icon). The bar
+picks up manual `shell.json` edits automatically.
+
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `instance` | `""` | Base URL of your Vikunja instance (no trailing slash). |
+| `syncInterval` | `300` | Seconds between automatic refreshes (clamped 30–86400). |
 | `showDone` | `false` | Also show completed todos, dimmed. |
 | `showNoDate` | `true` | Include todos that have no due date. |
+
+The API token is **not** stored in `shell.json` — it lives in the OS keyring
+(`service org.jasongerber.vikunja`) and is written from the settings page.
 
 ## IPC
 
