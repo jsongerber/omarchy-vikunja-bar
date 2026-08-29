@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "org.jasongerber.vikunja",
+  "id": "org.jsongerber.vikunja",
   "name": "Vikunja Todos",
   "version": "1.0.0",
   "author": "jsongerber",
@@ -20,8 +20,8 @@
     "defaultSection": "right",
     "defaults": {
       "instance": "",
-      "showDone": false,
       "showNoDate": true,
+      "showTitle": true,
       "syncInterval": 300
     },
     "schema": [
@@ -33,18 +33,18 @@
         "description": "Base URL of your Vikunja instance, e.g. https://vikunja.example.com"
       },
       {
-        "key": "showDone",
-        "type": "boolean",
-        "label": "Show completed todos",
-        "defaultValue": false,
-        "description": "Also show tasks that are already done, dimmed."
-      },
-      {
         "key": "showNoDate",
         "type": "boolean",
         "label": "Show todos without a due date",
         "defaultValue": true,
         "description": "Include tasks that have no due date."
+      },
+      {
+        "key": "showTitle",
+        "type": "boolean",
+        "label": "Show next task title in the bar",
+        "defaultValue": true,
+        "description": "Display the next task's title in the bar; when off, only a compact icon is shown."
       },
       {
         "key": "syncInterval",

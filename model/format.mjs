@@ -19,18 +19,32 @@ export function truncate(value, limit) {
   return string.substring(0, max - 1).replace(/\s+$/, "") + "…"
 }
 
-// Short relative due label: "", "today", "tmrw", "in 3d", "overdue 2d".
+// Short relative due label: "", "today", "tmrw", "in 3d", "3d ago".
 export function relativeDue(task, now) {
   const due = task && task.dueMs
   if (due === null || due === undefined || isNaN(due)) return ""
   const distance = dayDistance(due, now)
   if (distance < 0) {
     const days = -distance
-    return days === 1 ? "overdue 1d" : "overdue " + days + "d"
+    return days === 1 ? "1d ago" : days + "d ago"
   }
   if (distance === 0) return "today"
   if (distance === 1) return "tmrw"
   return "in " + distance + "d"
+}
+
+// Room left for the title once the due suffix is accounted for.
+function barTitleLimit(task, now) {
+  let suffix = relativeDue(task, now)
+  if (suffix !== "") suffix = " · " + suffix
+  return Math.max(3, MAX_BAR_LABEL_LENGTH - suffix.length)
+}
+
+// True when the bar label has to truncate the title to fit. Used by the
+// hover tooltip to surface the full name when the bar can only show part of it.
+export function labelIsTruncated(task, now) {
+  const title = plainLine(task ? task.title : undefined)
+  return title.length > barTitleLimit(task, now)
 }
 
 // Bar label: title plus the relative due time, capped to fit.
@@ -39,7 +53,7 @@ export function formatLabel(task, now) {
   let suffix = relativeDue(task, now)
   if (suffix !== "") suffix = " · " + suffix
 
-  const titleLimit = Math.max(3, MAX_BAR_LABEL_LENGTH - suffix.length)
+  const titleLimit = barTitleLimit(task, now)
   if (title.length > titleLimit) title = title.slice(0, Math.max(1, titleLimit - 1)) + "…"
   return title + suffix
 }

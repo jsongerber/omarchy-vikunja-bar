@@ -2,6 +2,9 @@
 export const MAX_OUTPUT_CHARS = 2 * 1024 * 1024
 export const MAX_TASKS = 1000
 export const MAX_PROJECTS = 500
+// The panel only renders the first N open tasks; the rest stay counted in the
+// tooltip summary but are not instantiated as rows.
+export const MAX_DISPLAY_TASKS = 20
 export const MAX_TITLE_CHARS = 500
 export const MAX_DESCRIPTION_CHARS = 8192
 export const MAX_DATE_CHARS = 64

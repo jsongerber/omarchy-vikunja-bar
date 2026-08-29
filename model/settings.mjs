@@ -6,13 +6,13 @@ export const INSTANCE = {
   defaultValue: ""
 }
 
-export const SHOW_DONE = {
-  key: "showDone",
-  defaultValue: false
-}
-
 export const SHOW_NO_DATE = {
   key: "showNoDate",
+  defaultValue: true
+}
+
+export const SHOW_TITLE = {
+  key: "showTitle",
   defaultValue: true
 }
 
@@ -42,12 +42,12 @@ function normalizeBoolean(value, spec) {
   return spec.defaultValue
 }
 
-export function normalizeShowDone(value) {
-  return normalizeBoolean(value, SHOW_DONE)
-}
-
 export function normalizeShowNoDate(value) {
   return normalizeBoolean(value, SHOW_NO_DATE)
+}
+
+export function normalizeShowTitle(value) {
+  return normalizeBoolean(value, SHOW_TITLE)
 }
 
 // Seconds between automatic refreshes. shell.json is hand-editable so the

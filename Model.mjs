@@ -19,6 +19,8 @@ export {
   nextTodo,
   buildGroups,
   heroActions,
+  summaryCounts,
+  truncateGroups,
   GROUP_OVERDUE,
   GROUP_TODAY,
   GROUP_TOMORROW,
@@ -28,17 +30,18 @@ export {
 
 export {
   INSTANCE,
-  SHOW_DONE,
   SHOW_NO_DATE,
+  SHOW_TITLE,
   SYNC_INTERVAL,
   normalizeInstance,
-  normalizeShowDone,
   normalizeShowNoDate,
+  normalizeShowTitle,
   normalizeSyncInterval
 } from "./model/settings.mjs"
 
 export {
   formatLabel,
+  labelIsTruncated,
   relativeDue,
   dueDateLabel,
   priorityGlyph,
@@ -57,13 +60,15 @@ export {
   storeTokenCommand,
   tasksCommand,
   projectsCommand,
-  toggleDoneCommand
+  toggleDoneCommand,
+  testCommand
 } from "./model/command.mjs"
 
 export {
   MAX_OUTPUT_CHARS,
   MAX_TASKS,
   MAX_PROJECTS,
+  MAX_DISPLAY_TASKS,
   MAX_TITLE_CHARS,
   MAX_DESCRIPTION_CHARS,
   MAX_DATE_CHARS,

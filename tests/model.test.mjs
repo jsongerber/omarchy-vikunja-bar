@@ -117,14 +117,36 @@ test("buildGroups hides no-date tasks when showNoDate is false", () => {
   assert.deepEqual(Model.buildGroups(parsed, NOW, { showNoDate: false }).map(g => g.key), ["today"])
 })
 
-test("buildGroups hides done tasks by default and shows them when enabled", () => {
+test("buildGroups hides done tasks", () => {
   const parsed = Model.parseTasks(JSON.stringify([
     task("Open", { due_date: "2026-08-19T11:00:00Z" }),
     task("Done", { due_date: "2026-08-19T12:00:00Z", done: true })
   ]))
 
   assert.deepEqual(Model.buildGroups(parsed, NOW).map(g => g.items.length), [1])
-  assert.deepEqual(Model.buildGroups(parsed, NOW, { showDone: true }).map(g => g.items.length), [2])
+})
+
+test("buildGroups keeps optimistically-done tasks as crossed entries", () => {
+  const parsed = Model.parseTasks(JSON.stringify([
+    task("Overdue", { id: 1, due_date: "2026-08-10T09:00:00Z" }),
+    task("Today", { id: 2, due_date: "2026-08-19T11:00:00Z" })
+  ]))
+
+  const groups = Model.buildGroups(parsed, NOW, { pendingDone: { 1: true } })
+  assert.deepEqual(groups.map(g => g.key), ["overdue", "today"])
+  assert.equal(groups[0].items.length, 1)
+  assert.equal(groups[0].items[0].title, "Overdue")
+  assert.equal(groups[0].items[0].done, true)
+})
+
+test("nextTodo skips optimistically-done tasks", () => {
+  const parsed = Model.parseTasks(JSON.stringify([
+    task("Overdue", { id: 1, due_date: "2026-08-10T09:00:00Z" }),
+    task("Today", { id: 2, due_date: "2026-08-19T11:00:00Z" })
+  ]))
+
+  assert.equal(Model.nextTodo(parsed, { 1: true }).title, "Today")
+  assert.equal(Model.nextTodo(parsed, { 1: true, 2: true }), null)
 })
 
 test("relativeDue labels overdue, today, tomorrow, and future days", () => {
@@ -133,7 +155,7 @@ test("relativeDue labels overdue, today, tomorrow, and future days", () => {
   const tomorrow = Model.parseTasks(JSON.stringify([task("c", { due_date: "2026-08-20T09:00:00Z" })]))[0]
   const future = Model.parseTasks(JSON.stringify([task("d", { due_date: "2026-08-25T09:00:00Z" })]))[0]
 
-  assert.equal(Model.relativeDue(overdue, NOW), "overdue 3d")
+  assert.equal(Model.relativeDue(overdue, NOW), "3d ago")
   assert.equal(Model.relativeDue(today, NOW), "today")
   assert.equal(Model.relativeDue(tomorrow, NOW), "tmrw")
   assert.equal(Model.relativeDue(future, NOW), "in 6d")
@@ -146,6 +168,16 @@ test("formatLabel appends the relative due time and caps long titles", () => {
 
   const long = Model.parseTasks(JSON.stringify([task("A very long todo title indeed", { due_date: "2026-08-19T11:00:00Z" })]))[0]
   assert.ok(Model.formatLabel(long, NOW).endsWith("· today"))
+})
+
+test("labelIsTruncated matches whether formatLabel ellipsizes the title", () => {
+  const short = Model.parseTasks(JSON.stringify([task("Standup", { due_date: "2026-08-19T11:00:00Z" })]))[0]
+  const long = Model.parseTasks(JSON.stringify([task("A very long todo title indeed", { due_date: "2026-08-19T11:00:00Z" })]))[0]
+
+  assert.equal(Model.labelIsTruncated(short, NOW), false)
+  assert.equal(Model.labelIsTruncated(long, NOW), true)
+  assert.equal(Model.formatLabel(long, NOW).includes("…"), true)
+  assert.equal(Model.labelIsTruncated(null, NOW), false)
 })
 
 test("heroActions offer done only for open tasks", () => {
@@ -164,14 +196,13 @@ test("instance normalization strips trailing slashes", () => {
 })
 
 test("boolean settings normalize strings and fall back to defaults", () => {
-  assert.equal(Model.normalizeShowDone(undefined), false)
-  assert.equal(Model.normalizeShowDone(true), true)
-  assert.equal(Model.normalizeShowDone("true"), true)
-  assert.equal(Model.normalizeShowDone("YES"), true)
-  assert.equal(Model.normalizeShowDone("nonsense"), false)
-
   assert.equal(Model.normalizeShowNoDate(undefined), true)
   assert.equal(Model.normalizeShowNoDate("off"), false)
+
+  assert.equal(Model.normalizeShowTitle(undefined), true)
+  assert.equal(Model.normalizeShowTitle(false), false)
+  assert.equal(Model.normalizeShowTitle("true"), true)
+  assert.equal(Model.normalizeShowTitle("nonsense"), true)
 })
 
 test("sync interval clamps to bounds and falls back to the default", () => {
@@ -213,7 +244,7 @@ test("the settings declarations stay in step with the manifest schema", () => {
   const schema = manifest.barWidget.schema
   const defaults = manifest.barWidget.defaults
 
-  for (const spec of [Model.INSTANCE, Model.SHOW_DONE, Model.SHOW_NO_DATE, Model.SYNC_INTERVAL]) {
+  for (const spec of [Model.INSTANCE, Model.SHOW_NO_DATE, Model.SHOW_TITLE, Model.SYNC_INTERVAL]) {
     const entry = schema.find(item => item.key === spec.key)
     assert.ok(entry, `manifest.json is missing a schema entry for ${spec.key}`)
     assert.equal(entry.defaultValue, spec.defaultValue)
@@ -235,4 +266,46 @@ test("tasks past the cardinality cap are rejected", () => {
 test("plainLine neutralizes rich-text triggers", () => {
   assert.equal(Model.plainLine("<b>Hi</b>\nline2"), "‹b>Hi‹/b> line2")
   assert.equal(Model.plainLine(null), "")
+})
+
+test("summaryCounts counts open, overdue, and no-date tasks", () => {
+  const parsed = Model.parseTasks(JSON.stringify([
+    task("Overdue", { id: 1, due_date: "2026-08-10T09:00:00Z" }),
+    task("Today", { id: 2, due_date: "2026-08-19T11:00:00Z" }),
+    task("No date", { id: 3 }),
+    task("Done overdue", { id: 4, due_date: "2026-08-05T09:00:00Z", done: true }),
+    task("Done no date", { id: 5, done: true })
+  ]))
+
+  assert.deepEqual(Model.summaryCounts(parsed, NOW), { open: 3, overdue: 1, noDate: 1 })
+  assert.deepEqual(Model.summaryCounts([], NOW), { open: 0, overdue: 0, noDate: 0 })
+})
+
+test("truncateGroups caps the total across groups and reports hidden", () => {
+  const parsed = Model.parseTasks(JSON.stringify([
+    task("A", { id: 1, due_date: "2026-08-10T09:00:00Z" }),
+    task("B", { id: 2, due_date: "2026-08-11T09:00:00Z" }),
+    task("C", { id: 3, due_date: "2026-08-19T11:00:00Z" }),
+    task("D", { id: 4 }),
+    task("E", { id: 5 })
+  ]))
+  const groups = Model.buildGroups(parsed, NOW)
+  const limited = Model.truncateGroups(groups, 3)
+
+  assert.equal(limited.hidden, 2)
+  assert.equal(limited.groups.reduce((n, g) => n + g.items.length, 0), 3)
+  assert.deepEqual(limited.groups.map(g => g.items.map(t => t.title)).flat(),
+    ["A", "B", "C"])
+})
+
+test("truncateGroups without a limit keeps everything", () => {
+  const parsed = Model.parseTasks(JSON.stringify([
+    task("A", { id: 1, due_date: "2026-08-10T09:00:00Z" }),
+    task("B", { id: 2 })
+  ]))
+  const groups = Model.buildGroups(parsed, NOW)
+  const limited = Model.truncateGroups(groups, Model.MAX_DISPLAY_TASKS)
+
+  assert.equal(limited.hidden, 0)
+  assert.deepEqual(limited.groups, groups)
 })

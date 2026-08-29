@@ -10,7 +10,7 @@ import "Model.mjs" as Model
 // stays presentational.
 Panel {
   id: root
-  moduleName: "org.jasongerber.vikunja"
+  moduleName: "org.jsongerber.vikunja"
   manageIpc: false
 
   property var anchorItem: null
@@ -24,7 +24,16 @@ Panel {
   readonly property bool hasConfig: hostWidget ? hostWidget.hasConfig : false
   readonly property var groups: hostWidget && hostWidget.groups ? hostWidget.groups : []
   readonly property var next: hostWidget ? hostWidget.next : null
+  readonly property int hiddenCount: hostWidget ? hostWidget.hiddenCount : 0
+  readonly property bool showTitle: hostWidget ? hostWidget.showTitle : true
+  readonly property string testStatus: hostWidget ? hostWidget.testStatus : "idle"
+  readonly property string testMessage: hostWidget ? hostWidget.testMessage : ""
+  readonly property string configIssue: hostWidget ? hostWidget.configIssue : ""
   property date now: hostWidget ? hostWidget.now : new Date()
+
+  onTestStatusChanged: {
+    if (root.testStatus === "ok") tokenField.text = ""
+  }
 
   readonly property color contentForeground: bar ? bar.barForeground : Color.foreground
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
@@ -58,6 +67,13 @@ Panel {
     if (hostWidget) hostWidget.refresh()
   }
 
+  function testConnection() {
+    if (!hostWidget) return
+    root.saveServer()
+    var typed = String(tokenField.text || "").trim()
+    hostWidget.testConnection(typed)
+  }
+
   function priorityColor(priority) {
     switch (priority) {
       case 1: return "#6fc276"
@@ -78,6 +94,7 @@ Panel {
     Qt.callLater(function() {
       serverField.text = root.hostWidget ? root.hostWidget.instance : ""
       tokenField.text = ""
+      if (root.hostWidget) root.hostWidget.resetTest()
       if (scroll) scroll.contentY = 0
     })
   }
@@ -95,14 +112,6 @@ Panel {
     serverField.text = normalized
   }
 
-  function saveToken() {
-    if (!root.hostWidget) return
-    var value = String(tokenField.text || "").trim()
-    if (value === "") return
-    root.hostWidget.storeToken(value)
-    tokenField.text = ""
-  }
-
   function saveSyncInterval(value) {
     if (!root.hostWidget) return
     var normalized = Model.normalizeSyncInterval(value)
@@ -110,14 +119,14 @@ Panel {
       root.hostWidget.persistSettings({ syncInterval: normalized })
   }
 
-  function toggleShowDone() {
-    if (!root.hostWidget) return
-    root.hostWidget.persistSettings({ showDone: !root.hostWidget.showDone })
-  }
-
   function toggleShowNoDate() {
     if (!root.hostWidget) return
     root.hostWidget.persistSettings({ showNoDate: !root.hostWidget.showNoDate })
+  }
+
+  function toggleShowTitle() {
+    if (!root.hostWidget) return
+    root.hostWidget.persistSettings({ showTitle: !root.hostWidget.showTitle })
   }
 
   function openTokenUrl() {
@@ -146,7 +155,8 @@ Panel {
       anchors.fill: parent
       blocked: serverField.activeFocus || tokenField.activeFocus
         || intervalField.field.activeFocus
-        || showDoneToggle.activeFocus || showNoDateToggle.activeFocus
+        || showNoDateToggle.activeFocus
+        || showTitleToggle.activeFocus
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(text) {
@@ -216,7 +226,7 @@ Panel {
                 tooltipText: root.syncing ? "Syncing todos…" : "Sync now"
                 foreground: root.contentForeground
                 fontFamily: root.contentFontFamily
-                visible: root.hasConfig && !root.showSettings
+                visible: !root.showSettings
                 enabled: !root.syncing
                 opacity: root.syncing ? 0.6 : 1.0
                 onClicked: root.syncNow()
@@ -300,11 +310,11 @@ Panel {
                   id: tokenField
                   width: parent.width
                   password: true
-                  placeholderText: "Stored in keyring — type to replace, then press Enter"
+                  placeholderText: "Paste token, then test connection"
                   foreground: root.contentForeground
                   accent: Color.accent
                   font.family: root.contentFontFamily
-                  onAccepted: root.saveToken()
+                  onAccepted: root.testConnection()
                 }
 
                 Item {
@@ -330,6 +340,43 @@ Panel {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.openTokenUrl()
                   }
+                }
+              }
+
+              Column {
+                width: parent.width
+                spacing: Style.space(6)
+
+                PanelSectionHeader {
+                  text: "TEST CONNECTION"
+                  foreground: root.contentForeground
+                  fontFamily: root.contentFontFamily
+                }
+
+                Button {
+                  id: testButton
+                  width: parent.width
+                  text: root.testStatus === "running" ? "Testing…" : "Test connection"
+                  selected: true
+                  accent: Color.accent
+                  foreground: root.contentForeground
+                  fontFamily: root.contentFontFamily
+                  fontSize: Style.font.bodySmall
+                  iconSize: Style.font.bodySmall
+                  horizontalPadding: Style.space(12)
+                  verticalPadding: Style.space(7)
+                  onClicked: root.testConnection()
+                }
+
+                Text {
+                  width: parent.width
+                  visible: root.testStatus === "ok" || root.testStatus === "error"
+                  text: root.testMessage
+                  textFormat: Text.PlainText
+                  color: root.testStatus === "ok" ? "#6fc276" : Color.urgent
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.caption
+                  wrapMode: Text.WordWrap
                 }
               }
 
@@ -365,18 +412,6 @@ Panel {
               }
 
               Toggle {
-                id: showDoneToggle
-                width: parent.width
-                label: "Show completed todos"
-                description: "Also show tasks that are already done, dimmed."
-                checked: root.hostWidget ? root.hostWidget.showDone : false
-                foreground: root.contentForeground
-                accent: Color.accent
-                fontFamily: root.contentFontFamily
-                onClicked: root.toggleShowDone()
-              }
-
-              Toggle {
                 id: showNoDateToggle
                 width: parent.width
                 label: "Show todos without a due date"
@@ -387,6 +422,18 @@ Panel {
                 fontFamily: root.contentFontFamily
                 onClicked: root.toggleShowNoDate()
               }
+
+              Toggle {
+                id: showTitleToggle
+                width: parent.width
+                label: "Show next task title in the bar"
+                description: "When off, the bar shows only a compact icon."
+                checked: root.showTitle
+                foreground: root.contentForeground
+                accent: Color.accent
+                fontFamily: root.contentFontFamily
+                onClicked: root.toggleShowTitle()
+              }
             }
           }
 
@@ -394,42 +441,33 @@ Panel {
             id: errorItem
             visible: !root.showSettings && root.loadError !== "" && root.hasConfig
             width: parent.width
-            height: visible ? errorText.implicitHeight + Style.space(16) : 0
+            height: visible ? errorColumn.implicitHeight + Style.space(20) : 0
             implicitHeight: height
             radius: Style.cornerRadius
             color: Style.normalFillFor(root.contentForeground, Color.urgent)
             borderSpec: Border.controlSpec("normal", root.contentForeground, Color.urgent)
 
-            Text {
-              id: errorText
+            Column {
+              id: errorColumn
               anchors.left: parent.left
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              anchors.margins: Style.space(8)
-              text: root.loadError
-              textFormat: Text.PlainText
-              color: Color.urgent
-              font.family: root.contentFontFamily
-              font.pixelSize: Style.font.caption
-              wrapMode: Text.WordWrap
-            }
-          }
-
-          Item {
-            id: setupItem
-            visible: !root.showSettings && !!root.hostWidget && !root.hasConfig
-            width: parent.width
-            height: visible ? setupColumn.implicitHeight : 0
-            implicitHeight: height
-
-            Column {
-              id: setupColumn
-              width: parent.width
+              anchors.leftMargin: Style.space(12)
+              anchors.rightMargin: Style.space(12)
               spacing: Style.space(8)
 
               Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: ""
+                color: Color.urgent
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.display
+              }
+
+              Text {
                 width: parent.width
-                text: "Connect Vikunja"
+                horizontalAlignment: Text.AlignHCenter
+                text: "Couldn't reach Vikunja"
                 color: root.contentForeground
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.subtitle
@@ -439,7 +477,8 @@ Panel {
 
               Text {
                 width: parent.width
-                text: "Click the gear icon to open the settings and set your instance URL and API token."
+                horizontalAlignment: Text.AlignHCenter
+                text: root.loadError
                 textFormat: Text.PlainText
                 color: Qt.darker(root.contentForeground, 1.35)
                 font.family: root.contentFontFamily
@@ -447,14 +486,109 @@ Panel {
                 wrapMode: Text.WordWrap
               }
 
+              RowLayout {
+                width: parent.width
+                spacing: Style.space(8)
+
+                Button {
+                  Layout.fillWidth: true
+                  text: "Retry"
+                  iconText: ""
+                  selected: true
+                  accent: Color.accent
+                  foreground: root.contentForeground
+                  fontFamily: root.contentFontFamily
+                  fontSize: Style.font.bodySmall
+                  iconSize: Style.font.bodySmall
+                  horizontalPadding: Style.space(12)
+                  verticalPadding: Style.space(7)
+                  onClicked: root.syncNow()
+                }
+
+                Button {
+                  Layout.fillWidth: true
+                  text: "Settings"
+                  iconText: ""
+                  bordered: true
+                  foreground: root.contentForeground
+                  fontFamily: root.contentFontFamily
+                  fontSize: Style.font.bodySmall
+                  iconSize: Style.font.bodySmall
+                  horizontalPadding: Style.space(12)
+                  verticalPadding: Style.space(7)
+                  onClicked: root.openSettings()
+                }
+              }
+            }
+          }
+
+          Item {
+            id: setupItem
+            visible: !root.showSettings && !!root.hostWidget && !root.hasConfig
+              && root.widgetState === "missing"
+            width: parent.width
+            height: visible ? setupColumn.implicitHeight + Style.space(16) : 0
+            implicitHeight: height
+
+            Column {
+              id: setupColumn
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: Style.space(12)
+              anchors.rightMargin: Style.space(12)
+              spacing: Style.space(8)
+
+              Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: ""
+                color: Qt.darker(root.contentForeground, 1.5)
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.display
+              }
+
               Text {
                 width: parent.width
-                text: "Create the token under Settings → API Tokens in Vikunja, paste it in the settings page, and the list loads automatically."
+                horizontalAlignment: Text.AlignHCenter
+                text: root.configIssue === "no-instance" ? "No instance set" : "No API token"
+                color: root.contentForeground
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.subtitle
+                font.bold: true
+                wrapMode: Text.WordWrap
+              }
+
+              Text {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: root.configIssue === "no-instance"
+                  ? "Set your Vikunja instance URL to load your todos."
+                  : "Store your Vikunja API token to load your todos."
                 textFormat: Text.PlainText
                 color: Qt.darker(root.contentForeground, 1.35)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.bodySmall
                 wrapMode: Text.WordWrap
+              }
+
+              RowLayout {
+                width: parent.width
+                spacing: Style.space(8)
+
+                Button {
+                  Layout.fillWidth: true
+                  text: "Open settings"
+                  iconText: ""
+                  selected: true
+                  accent: Color.accent
+                  foreground: root.contentForeground
+                  fontFamily: root.contentFontFamily
+                  fontSize: Style.font.bodySmall
+                  iconSize: Style.font.bodySmall
+                  horizontalPadding: Style.space(12)
+                  verticalPadding: Style.space(7)
+                  onClicked: root.openSettings()
+                }
               }
             }
           }
@@ -760,9 +894,14 @@ Panel {
                           Text {
                             Layout.alignment: Qt.AlignVCenter
                             visible: groupItem.group.key === Model.GROUP_LATER
-                            text: Model.dueDateLabel(taskRow.todo, root.now)
+                              || groupItem.group.key === Model.GROUP_OVERDUE
+                            text: groupItem.group.key === Model.GROUP_OVERDUE
+                              ? Model.relativeDue(taskRow.todo, root.now)
+                              : Model.dueDateLabel(taskRow.todo, root.now)
                             textFormat: Text.PlainText
-                            color: Qt.darker(root.contentForeground, 1.35)
+                            color: groupItem.group.key === Model.GROUP_OVERDUE
+                              ? Color.urgent
+                              : Qt.darker(root.contentForeground, 1.35)
                             font.family: root.contentFontFamily
                             font.pixelSize: Style.font.caption
                           }
@@ -772,6 +911,24 @@ Panel {
                   }
                 }
               }
+            }
+          }
+
+          Item {
+            id: hiddenNotice
+            visible: !root.showSettings && root.hiddenCount > 0
+            width: parent.width
+            height: visible ? hiddenNoticeText.implicitHeight + Style.space(4) : 0
+            implicitHeight: height
+
+            Text {
+              id: hiddenNoticeText
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: "…and " + root.hiddenCount + " more"
+              textFormat: Text.PlainText
+              color: Qt.darker(root.contentForeground, 1.5)
+              font.family: root.contentFontFamily
+              font.pixelSize: Style.font.caption
             }
           }
         }

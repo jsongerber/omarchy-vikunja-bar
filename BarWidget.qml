@@ -11,28 +11,44 @@ import "Model.mjs" as Model
 // the next todo done, and the list refreshes every five minutes.
 BarWidget {
   id: root
-  moduleName: "org.jasongerber.vikunja"
+  moduleName: "org.jsongerber.vikunja"
 
   readonly property string instance: Model.normalizeInstance(setting("instance", null))
-  readonly property bool showDone: Model.normalizeShowDone(setting("showDone", null))
   readonly property bool showNoDate: Model.normalizeShowNoDate(setting("showNoDate", null))
+  readonly property bool showTitle: Model.normalizeShowTitle(setting("showTitle", null))
   readonly property int syncInterval: Model.normalizeSyncInterval(setting("syncInterval", null))
 
   property var tasks: []
   property var groups: []
   property var next: null
+  property var pendingDone: ({})
   property var projectTitles: ({})
   property string token: ""
   property string loadError: ""
   property string widgetState: "checking"
+  property int hiddenCount: 0
   property date now: new Date()
+  property string testStatus: "idle"
+  property string testMessage: ""
+  property string testToken: ""
 
   readonly property bool syncing: tasksProcess.running || projectsProcess.running
   readonly property bool hasConfig: instance !== "" && token !== ""
+  readonly property string configIssue: instance === ""
+    ? "no-instance"
+    : token === "" ? "no-token" : ""
   readonly property string label: next
     ? "  " + Model.formatLabel(next, now)
     : ""
-  readonly property bool showingFallbackIcon: label === ""
+  readonly property bool showingFallbackIcon: !showTitle || label === ""
+
+  // The token is scoped to the instance URL in the keyring, so a cached token
+  // from the previous instance is invalid once the URL changes. Drop it so the
+  // next refresh re-reads the keyring (or shows the "no token" setup screen)
+  // instead of firing the old token at the new instance.
+  onInstanceChanged: {
+    if (token !== "") token = ""
+  }
 
   function refresh() {
     if (secretProcess.running || tasksProcess.running || projectsProcess.running || toggleProcess.running) return
@@ -44,7 +60,7 @@ BarWidget {
       return
     }
     if (token === "") {
-      secretProcess.command = Model.secretLookupCommand()
+      secretProcess.command = Model.secretLookupCommand(instance)
       secretProcess.running = true
       return
     }
@@ -114,8 +130,11 @@ BarWidget {
 
   function setTasks(list) {
     tasks = list
-    groups = Model.buildGroups(tasks, now, { showDone: showDone, showNoDate: showNoDate })
-    next = Model.nextTodo(tasks)
+    next = Model.nextTodo(tasks, pendingDone)
+    var built = Model.buildGroups(tasks, now, { showNoDate: showNoDate, pendingDone: pendingDone })
+    var limited = Model.truncateGroups(built, Model.MAX_DISPLAY_TASKS)
+    groups = limited.groups
+    hiddenCount = limited.hidden
   }
 
   function openTask(task) {
@@ -126,13 +145,19 @@ BarWidget {
   function toggleDone(task) {
     if (!task || toggleProcess.running) return
     if (token === "") return
+    // Optimistically mark the task done so it renders crossed immediately;
+    // finishToggle reverts it if the PATCH fails.
+    pendingDone[task.id] = true
+    setTasks(tasks)
     toggleProcess.command = Model.boundedCommand(Model.toggleDoneCommand(instance, task.id))
     toggleProcess.environment = rootTokenEnv()
     toggleProcess.running = true
   }
 
   function finishToggle(exitCode) {
+    pendingDone = ({})
     if (exitCode !== 0) {
+      setTasks(tasks)
       var detail = Model.truncate(String(toggleStderr.text || "").trim(), 200)
       Quickshell.execDetached([
         "notify-send", "-u", "low", "Vikunja Todos",
@@ -145,6 +170,87 @@ BarWidget {
 
   function eventValue(value) {
     return value === undefined || value === null ? "" : String(value)
+  }
+
+  // Reset the settings-page connection test back to a neutral state.
+  function resetTest() {
+    testStatus = "idle"
+    testMessage = ""
+  }
+
+  // Test the configured instance + token with a lightweight authenticated
+  // request. `tokenOverride` is the unsaved token still sitting in the
+  // settings field; when present it is tested directly instead of the keyring.
+  // Otherwise the cached token is used, or looked up from the keyring first.
+  function testConnection(tokenOverride) {
+    if (testProcess.running || secretTestProcess.running) return
+    if (instance === "") {
+      testStatus = "error"
+      testMessage = "Set an instance URL first."
+      return
+    }
+    var candidate = tokenOverride === undefined || tokenOverride === null
+      ? "" : String(tokenOverride).trim()
+    if (candidate !== "") {
+      testToken = candidate
+      runTest()
+      return
+    }
+    if (token === "") {
+      testStatus = "running"
+      testMessage = "Reading API token from the keyring…"
+      secretTestProcess.command = Model.secretLookupCommand(instance)
+      secretTestProcess.running = true
+      return
+    }
+    runTest()
+  }
+
+  function runTest() {
+    testStatus = "running"
+    testMessage = "Testing connection…"
+    testProcess.command = Model.boundedCommand(Model.testCommand(instance))
+    testProcess.environment = testTokenEnv()
+    testProcess.running = true
+  }
+
+  function testTokenEnv() {
+    var env = {}
+    env[Model.TOKEN_ENV] = testToken !== "" ? testToken : token
+    return env
+  }
+
+  function finishSecretTest(exitCode) {
+    var value = String(secretTestStdout.text || "").trim()
+    if (exitCode !== 0 || value === "") {
+      testStatus = "error"
+      testMessage = "API token not found in the keyring. Paste it above and try again."
+      return
+    }
+    token = value
+    runTest()
+  }
+
+  function finishTest(exitCode) {
+    var out = String(testStdout.text || "").trim()
+    var override = testToken
+    testToken = ""
+    if (exitCode === 0) {
+      testStatus = "ok"
+      testMessage = "Connection OK"
+      loadError = ""
+      widgetState = "ready"
+      if (override !== "") {
+        // The user tested a token still in the field — persist it so the list
+        // actually loads, then refresh.
+        storeToken(instance, override)
+      } else {
+        refresh()
+      }
+    } else {
+      testStatus = "error"
+      testMessage = out !== "" ? Model.truncate(out, 240) : "Connection failed."
+    }
   }
 
   // Persist one or more settings to this widget's shell.json entry. Applied
@@ -161,22 +267,27 @@ BarWidget {
       root.bar.shell.updateEntryInline(root.moduleName, entry)
   }
 
-  // Store a freshly entered token in the keyring, then re-read it so the
-  // widget re-authenticates against the configured instance. The token is
-  // piped over stdin and cleared immediately after.
-  function storeToken(value) {
+  // Store a freshly entered token in the keyring, scoped to the instance it
+  // belongs to, then re-read it so the widget re-authenticates. The token
+  // travels via the VIKUNJA_TOKEN environment variable, never argv.
+  function storeToken(instanceUrl, value) {
     var text = String(value || "").trim()
     if (text === "" || tokenStoreProcess.running) return
-    tokenStoreProcess.secret = text
-    tokenStoreProcess.command = Model.storeTokenCommand()
+    var env = {}
+    env[Model.TOKEN_ENV] = text
+    tokenStoreProcess.environment = env
+    tokenStoreProcess.command = Model.storeTokenCommand(instanceUrl)
     tokenStoreProcess.running = true
   }
 
   function finishStoreToken(exitCode) {
     if (exitCode !== 0) {
+      var detail = Model.truncate(String(tokenStoreStderr.text || "").trim(), 200)
       Quickshell.execDetached([
         "notify-send", "-u", "critical", "Vikunja Todos",
-        "Could not store the API token in the keyring."
+        detail !== ""
+          ? "Could not store the API token in the keyring: " + detail
+          : "Could not store the API token in the keyring."
       ])
       return
     }
@@ -217,7 +328,10 @@ BarWidget {
         Math.round(Style.bar.iconSlot * 0.55))
     : plainLabel.implicitWidth
 
-  onSettingsChanged: Qt.callLater(root.refresh)
+  onSettingsChanged: {
+    root.resetTest()
+    Qt.callLater(root.refresh)
+  }
 
   SystemClock {
     id: clock
@@ -287,17 +401,32 @@ BarWidget {
     id: tokenStoreProcess
     running: false
     clearEnvironment: false
-    property string secret: ""
-    stdinEnabled: true
-    onStarted: {
-      write(secret + "\n")
-      secret = ""
-    }
     stderr: StdioCollector {
       id: tokenStoreStderr
       waitForEnd: true
     }
     onExited: function(exitCode) { root.finishStoreToken(exitCode) }
+  }
+
+  Process {
+    id: secretTestProcess
+    running: false
+    stdout: StdioCollector {
+      id: secretTestStdout
+      waitForEnd: true
+    }
+    onExited: function(exitCode) { root.finishSecretTest(exitCode) }
+  }
+
+  Process {
+    id: testProcess
+    running: false
+    clearEnvironment: false
+    stdout: StdioCollector {
+      id: testStdout
+      waitForEnd: true
+    }
+    onExited: function(exitCode) { root.finishTest(exitCode) }
   }
 
   Loader {
@@ -314,7 +443,7 @@ BarWidget {
   }
 
   IpcHandler {
-    target: "org.jasongerber.vikunja"
+    target: "org.jsongerber.vikunja"
 
     function refresh(): void { root.refresh() }
     function toggle(): void { root.togglePanel() }
@@ -379,14 +508,20 @@ BarWidget {
     }
   }
 
-  // Sanitize external text passed to the host's AutoText tooltip.
+  // Sanitize external text passed to the host's AutoText tooltip. Shows a
+  // summary of the open list rather than repeating the bar label.
   readonly property string tooltipLine: {
     if (widgetState === "checking") return "Checking for Vikunja…"
     if (loadError !== "") return Model.plainLine(loadError)
-    if (!next) return "No open todos"
-    var title = Model.plainLine(next.title)
-    var due = Model.relativeDue(next, now)
-    return due !== "" ? title + " · " + due : title
+    var counts = Model.summaryCounts(tasks, now)
+    if (counts.open === 0) return "No open todos"
+    var parts = [counts.open + " open"]
+    if (counts.overdue > 0) parts.push(counts.overdue + " overdue")
+    if (counts.noDate > 0) parts.push(counts.noDate + " no date")
+    var summary = parts.join(" · ")
+    if (next && (!showTitle || Model.labelIsTruncated(next, now)))
+      return Model.plainLine(next.title) + "\n────────\n" + summary
+    return summary
   }
 
   Component.onCompleted: {
