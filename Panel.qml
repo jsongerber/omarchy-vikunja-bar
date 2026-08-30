@@ -319,6 +319,8 @@ Panel {
 
                 Item {
                   id: tokenLinkRow
+                  visible: root.instance !== ""
+                    && Model.normalizeInstance(serverField.text) === root.instance
                   width: tokenLink.implicitWidth
                   height: tokenLink.implicitHeight
 
@@ -340,6 +342,17 @@ Panel {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.openTokenUrl()
                   }
+                }
+
+                Text {
+                  visible: !tokenLinkRow.visible
+                  width: parent.width
+                  text: "Settings → API Tokens page to generate a token."
+                  textFormat: Text.PlainText
+                  color: Qt.darker(root.contentForeground, 1.5)
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.caption
+                  wrapMode: Text.WordWrap
                 }
               }
 
