@@ -40,7 +40,8 @@ export function normalizedTask(raw, projectTitles) {
     projectId,
     projectTitle,
     description: clamped(raw.description, MAX_DESCRIPTION_CHARS),
-    isFavorite: raw.is_favorite === true
+    isFavorite: raw.is_favorite === true,
+    isRepeating: Number(raw.repeat_after) > 0 || Number(raw.repeat_mode) === 1
   }
 }
 

@@ -23,6 +23,7 @@ omarchy plugin remove org.jsongerber.vikunja
 - Hovering the bar shows a summary of the open list (e.g. `5 open · 2 overdue`).
 - Left-click a todo opens it in the Vikunja web UI; right-click marks it done.
 - Prioritised tasks show a colored priority marker (1–4).
+- Repeating tasks show a ↻ icon.
 - API token is read from the OS keyring and passed to `curl` via the
   environment — it never appears in `ps` or on disk.
 - Syncs automatically on a configurable interval (default 300 seconds).

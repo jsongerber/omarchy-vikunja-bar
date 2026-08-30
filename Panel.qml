@@ -645,7 +645,9 @@ Panel {
                   Item { Layout.fillWidth: true }
 
                   Text {
-                    text: root.next ? Model.dueDateLabel(root.next, root.now) : ""
+                    text: root.next
+                      ? Model.dueDateLabel(root.next, root.now) + (root.next.isRepeating ? " \uf01e" : "")
+                      : ""
                     textFormat: Text.PlainText
                     color: Qt.darker(root.contentForeground, 1.4)
                     font.family: root.contentFontFamily
@@ -908,13 +910,26 @@ Panel {
                             Layout.alignment: Qt.AlignVCenter
                             visible: groupItem.group.key === Model.GROUP_LATER
                               || groupItem.group.key === Model.GROUP_OVERDUE
-                            text: groupItem.group.key === Model.GROUP_OVERDUE
+                            text: (groupItem.group.key === Model.GROUP_OVERDUE
                               ? Model.relativeDue(taskRow.todo, root.now)
-                              : Model.dueDateLabel(taskRow.todo, root.now)
+                              : Model.dueDateLabel(taskRow.todo, root.now))
+                              + (taskRow.todo.isRepeating ? " \uf01e" : "")
                             textFormat: Text.PlainText
                             color: groupItem.group.key === Model.GROUP_OVERDUE
                               ? Color.urgent
                               : Qt.darker(root.contentForeground, 1.35)
+                            font.family: root.contentFontFamily
+                            font.pixelSize: Style.font.caption
+                          }
+
+                          Text {
+                            Layout.alignment: Qt.AlignVCenter
+                            visible: taskRow.todo.isRepeating
+                              && groupItem.group.key !== Model.GROUP_LATER
+                              && groupItem.group.key !== Model.GROUP_OVERDUE
+                            text: "\uf01e"
+                            textFormat: Text.PlainText
+                            color: Qt.darker(root.contentForeground, 1.35)
                             font.family: root.contentFontFamily
                             font.pixelSize: Style.font.caption
                           }

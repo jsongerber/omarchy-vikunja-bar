@@ -81,6 +81,18 @@ test("titles fall back to Untitled task", () => {
   assert.equal(parsed[0].title, "Untitled task")
 })
 
+test("isRepeating is set from repeat_after or monthly repeat_mode", () => {
+  const repeatAfter = Model.parseTasks(JSON.stringify([task("a", { repeat_after: 86400 })]))[0]
+  const monthly = Model.parseTasks(JSON.stringify([task("b", { repeat_mode: 1 })]))[0]
+  const none = Model.parseTasks(JSON.stringify([task("c", { repeat_after: null, repeat_mode: 0 })]))[0]
+  const junk = Model.parseTasks(JSON.stringify([task("d", { repeat_after: "nope" })]))[0]
+
+  assert.equal(repeatAfter.isRepeating, true)
+  assert.equal(monthly.isRepeating, true)
+  assert.equal(none.isRepeating, false)
+  assert.equal(junk.isRepeating, false)
+})
+
 test("nextTodo returns the most urgent open task and skips done ones", () => {
   const parsed = Model.parseTasks(JSON.stringify([
     task("Overdue", { id: 4, due_date: "2026-08-10T09:00:00Z" }),
