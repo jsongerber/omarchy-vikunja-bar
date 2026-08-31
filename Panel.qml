@@ -832,7 +832,7 @@ Panel {
                         readonly property var todo: modelData
                         readonly property bool done: modelData.done === true
                         width: parent.width
-                        hasCursor: false
+                        hasCursor: rowMouse.containsMouse
                         foreground: root.contentForeground
                         accent: Color.accent
                         opacity: done ? 0.45 : 1.0
