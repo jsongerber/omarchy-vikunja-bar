@@ -253,7 +253,7 @@ Panel {
 
               PanelActionButton {
                 id: settingsButton
-                iconText: ""
+                iconText: root.showSettings ? "" : ""
                 tooltipText: root.showSettings ? "Back to todos" : "Settings"
                 foreground: root.contentForeground
                 fontFamily: root.contentFontFamily
