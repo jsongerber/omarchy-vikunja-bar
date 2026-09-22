@@ -1,5 +1,8 @@
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import test from "node:test"
 
 import * as Model from "../Model.mjs"
@@ -267,6 +270,39 @@ test("the settings declarations stay in step with the manifest schema", () => {
 test("oversized Vikunja output is rejected before parsing", () => {
   const oversized = "x".repeat(Model.MAX_OUTPUT_CHARS + 1)
   assert.throws(() => Model.parseTasks(oversized), /exceeds/)
+})
+
+test("fetch commands hard-cap each response and the aggregate before merging", () => {
+  const script = Model.tasksCommand("https://example.test")[2]
+  assert.match(script, new RegExp("--max-filesize " + (Model.MAX_PAGE_BYTES + 1)))
+  assert.match(script, new RegExp("head -c " + (Model.MAX_PAGE_BYTES + 4)))
+  assert.match(script, new RegExp("-gt " + (Model.MAX_PAGE_BYTES + 3)))
+  assert.match(script, /total_bytes/)
+  assert.match(script, new RegExp("-gt " + Model.MAX_TOTAL_BYTES))
+})
+
+test("an oversized response is rejected without buffering it in the shell", () => {
+  const dir = mkdtempSync(join(tmpdir(), "vikunja-curl-"))
+  const stub = join(dir, "curl")
+  // A curl that ignores every flag and streams a body far past the page cap.
+  // The in-shell read cap must still bound what the command substitution can
+  // hold and turn the overrun into a clear failure.
+  writeFileSync(stub, "#!/bin/sh\nhead -c 5000000 /dev/zero | tr '\\0' x\nprintf '200'\n")
+  chmodSync(stub, 0o755)
+
+  const argv = Model.tasksCommand("https://example.test")
+  const result = spawnSync(argv[0], argv.slice(1), {
+    env: { ...process.env, PATH: dir + ":" + process.env.PATH, VIKUNJA_TOKEN: "test-token" },
+    encoding: "utf8",
+    timeout: 20000,
+    maxBuffer: 16 * 1024 * 1024
+  })
+
+  rmSync(dir, { recursive: true, force: true })
+
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /exceeds/)
+  assert.ok(result.stdout.length <= Model.MAX_STDOUT_BYTES)
 })
 
 test("tasks past the cardinality cap are rejected", () => {

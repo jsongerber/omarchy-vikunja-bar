@@ -3,6 +3,12 @@ import { MAX_OUTPUT_CHARS } from "./limits.mjs"
 export const MAX_STDOUT_BYTES = MAX_OUTPUT_CHARS
 export const MAX_STDERR_BYTES = 4096
 
+// Hard caps on untrusted response size. MAX_PAGE_BYTES bounds a single API
+// response and MAX_TOTAL_BYTES bounds the sum across pages, so a hostile or
+// misconfigured endpoint can never make the shell buffer an unbounded body.
+export const MAX_PAGE_BYTES = 1024 * 1024
+export const MAX_TOTAL_BYTES = MAX_OUTPUT_CHARS
+
 // The Vikunja API token travels via the VIKUNJA_TOKEN environment variable
 // (set on the Process), never argv, so it does not show up in `ps`.
 export const TOKEN_ENV = "VIKUNJA_TOKEN"
@@ -41,14 +47,30 @@ export function storeTokenCommand(instance) {
 // and fail the fetch so the widget can surface an error instead of showing an
 // empty list.
 function fetchItemsCommand(instance, path) {
+  const pageCap = MAX_PAGE_BYTES
+  const totalCap = MAX_TOTAL_BYTES
+  // curl aborts one byte past the page cap so an over-limit response stays
+  // detectable, and the read is capped one byte past that (plus the trailing
+  // three-byte HTTP code). Together they bound the response regardless of the
+  // curl version: curl stops the socket read, and head stops the shell from
+  // buffering more than the cap if the running curl does not honour it.
+  const curlCap = pageCap + 1
+  const readCap = pageCap + 4
+  const overflowCap = pageCap + 3
   const script = [
     'instance="$1"',
     'path="$2"',
     "page=1",
     "total_pages=1",
+    "total_bytes=0",
     'out="[]"',
     'while [ "$page" -le "$total_pages" ] && [ "$page" -le 20 ]; do',
-    '  resp="$(curl -sS --max-time 20 -w "%{http_code}" -H "Authorization: Bearer ${VIKUNJA_TOKEN}" "${instance}${path}?per_page=50&page=${page}")"',
+    '  resp="$(curl -sS --max-time 20 --max-filesize ' + curlCap + ' -w "%{http_code}" -H "Authorization: Bearer ${VIKUNJA_TOKEN}" "${instance}${path}?per_page=50&page=${page}" | head -c ' + readCap + ')"',
+    '  resp_bytes="$(printf "%s" "$resp" | wc -c)"',
+    '  if [ "$resp_bytes" -gt ' + overflowCap + ' ]; then',
+    '    printf "Vikunja response exceeds ' + pageCap + ' bytes for %s" "$path" >&2',
+    "    exit 1",
+    "  fi",
     '  code="${resp: -3}"',
     '  body="${resp%???}"',
     '  if [ "$code" != "200" ]; then',
@@ -63,8 +85,13 @@ function fetchItemsCommand(instance, path) {
     '    esac',
     '    exit 1',
     '  fi',
+    '  total_bytes=$((total_bytes + resp_bytes - 3))',
+    '  if [ "$total_bytes" -gt ' + totalCap + ' ]; then',
+    '    printf "Vikunja response exceeds ' + totalCap + ' bytes across pages" >&2',
+    "    exit 1",
+    "  fi",
     '  total_pages="$(printf "%s" "$body" | jq -r ".total_pages // 1")"',
-    '  out="$(printf "%s\\n%s" "$out" "$body" | jq -s ".[0] + .[1].items")"',
+    '  out="$(printf "%s\\n%s" "$out" "$body" | jq -c -s ".[0] + .[1].items")"',
     '  page="$((page + 1))"',
     "done",
     "printf '%s' \"$out\""

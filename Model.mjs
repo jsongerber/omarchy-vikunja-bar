@@ -53,6 +53,8 @@ export {
 export {
   MAX_STDOUT_BYTES,
   MAX_STDERR_BYTES,
+  MAX_PAGE_BYTES,
+  MAX_TOTAL_BYTES,
   TOKEN_ENV,
   SECRET_SERVICE,
   boundedCommand,
